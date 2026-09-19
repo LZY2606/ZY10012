@@ -144,6 +144,40 @@ class SpecialCasesTests(TestCase):
 
         self.assertRaises(PrimalScream, Screamer().parse, 'howdy')
 
+    def test_unwrapped_exceptions_inheritance(self):
+        """The unwrapped-exceptions contract is isinstance()-based: configuring
+        a base class must also let subclasses propagate unwrapped, while
+        unconfigured exceptions must still be wrapped with node context."""
+        class BaseScream(Exception):
+            pass
+
+        class SubScream(BaseScream):
+            pass
+
+        class Screamer(NodeVisitor):
+            grammar = Grammar("""greeting = 'howdy'""")
+            unwrapped_exceptions = (BaseScream,)
+
+            def visit_greeting(self, node, visited_children):
+                raise SubScream('subclass should still percolate up!')
+
+        # Configured base class, raised subclass: propagates unwrapped.
+        with self.assertRaises(SubScream):
+            Screamer().parse('howdy')
+
+        class Wrapper(NodeVisitor):
+            grammar = Grammar("""greeting = 'howdy'""")
+
+            def visit_greeting(self, node, visited_children):
+                raise SubScream('should be wrapped')
+
+        # Unconfigured exception: wrapped in VisitationError with node context.
+        with self.assertRaises(VisitationError) as ctx:
+            Wrapper().parse('howdy')
+        self.assertIs(ctx.exception.original_class, SubScream)
+        self.assertIsInstance(ctx.exception.__cause__, SubScream)
+        self.assertIn('Node called "greeting"', str(ctx.exception))
+
 
     def test_node_inequality(self):
         node = Node(Literal('12345'), 'o hai', 0, 5)
